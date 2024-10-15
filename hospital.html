@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hospital Recommendation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        form {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            margin-bottom: 8px;
+        }
+
+        input, select {
+            padding: 10px;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px;
+            font-size: 16px;
+            background-color: #007BFF;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #results {
+            max-width: 400px;
+            width: 100%;
+            max-height: 400px; /* Set a fixed height for the results section */
+            overflow-y: auto; /* Enable vertical scrolling */
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            box-sizing: border-box;
+            margin-top: 20px;
+        }
+
+        .hospital-info {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: background-color 0.3s, transform 0.3s;
+            word-wrap: break-word;
+        }
+
+        .hospital-info:hover {
+            background-color: #f9f9f9;
+            transform: translateY(-2px);
+        }
+
+        .name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .specialization {
+            color: #007BFF;
+        }
+
+        .details {
+            font-size: 14px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Hospital Recommendation</h1>
+        <form id="recommendationForm">
+            <label for="city">Enter City Name:</label>
+            <input type="text" id="city" name="city" required placeholder="e.g., Tenali">
+
+            <label for="radius">Enter Radius (kilometers):</label>
+            <input type="number" id="radius" name="radius" step="0.1" required placeholder="e.g., 10">
+
+            <label for="disease">Select Disease/Specialization:</label>
+            <select id="disease" name="disease">
+                <option value="">-- Select Specialization --</option>
+                <option value="cardiology">Cardiology</option>
+                <option value="oncology">Oncology</option>
+                <option value="pediatrics">Pediatrics</option>
+                <option value="neurology">Neurology</option>
+                <option value="orthopedics">Orthopedics</option>
+            </select>
+
+            <button type="submit">Get Recommendations</button>
+        </form>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        document.getElementById('recommendationForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            const city = document.getElementById('city').value;
+            const radiusKm = document.getElementById('radius').value;
+            const radiusMeters = radiusKm * 1000; // Convert kilometers to meters
+            const disease = document.getElementById('disease').value.toLowerCase().trim();
+            const resultsDiv = document.getElementById('results');
+
+            // Clear previous results
+            resultsDiv.innerHTML = '';
+
+            // Geocoding API request
+            const geocodeUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city)}&format=json&limit=1`;
+            fetch(geocodeUrl)
+                .then(response => response.json())
+                .then(data => {
+                    if (data && data.length > 0) {
+                        const { lat, lon } = data[0];
+
+                        // Overpass API query
+                        const query = `
+                            [out:json];
+                            (
+                              node["amenity"="hospital"](around:${radiusMeters}, ${lat}, ${lon});
+                              way["amenity"="hospital"](around:${radiusMeters}, ${lat}, ${lon});
+                              relation["amenity"="hospital"](around:${radiusMeters}, ${lat}, ${lon});
+                            );
+                            out body;
+                        `;
+                        const overpassUrl = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+
+                        // Fetch recommendations from Overpass API
+                        fetch(overpassUrl)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.elements && data.elements.length > 0) {
+                                    data.elements.forEach(element => {
+                                        const name = element.tags?.name || 'Unnamed hospital';
+                                        const hospitalLat = element.lat || (element.center && element.center.lat);
+                                        const hospitalLon = element.lon || (element.center && element.center.lon);
+                                        const locationText = hospitalLat && hospitalLon ? ` (${hospitalLat.toFixed(4)}, ${hospitalLon.toFixed(4)})` : '';
+                                        const tags = element.tags || {};
+                                        const specialization = tags["hospital:specialization"] || tags["specialization"] || 'No specialization info';
+                                        const emergency = tags["emergency"] || 'Not specified';
+
+                                        // Filter by disease/specialization if provided
+                                        if (!disease || specialization.toLowerCase().includes(disease)) {
+                                            const hospitalInfo = `
+                                                <div class="hospital-info">
+                                                    <span class="name">${name}</span>
+                                                    <span class="specialization">Specialization: ${specialization}</span>
+                                                    <div class="details">
+                                                        <div>Emergency: ${emergency}</div>
+                                                        <div>Location: ${locationText}</div>
+                                                    </div>
+                                                </div>
+                                            `;
+                                            resultsDiv.innerHTML += hospitalInfo;
+                                        }
+                                    });
+                                } else {
+                                    resultsDiv.innerHTML = 'No hospitals found within the specified radius.';
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error:', error);
+                                resultsDiv.innerHTML = 'Error fetching recommendations. Please try again later.';
+                            });
+                    } else {
+                        resultsDiv.innerHTML = 'City not found.';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    resultsDiv.innerHTML = 'Error fetching location. Please try again later.';
+                });
+        });
+    </script>
+</body>
+</html>
